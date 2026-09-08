@@ -1,0 +1,1643 @@
+{
+  "name": "Shopify_Return-to-Subscription_Safeguard_Agent_latest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fed34e50-e4f7-4459-a730-744c3b752937",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        192
+      ],
+      "id": "06f5d250-acee-4fef-82de-e003b3172cdd",
+      "name": "Return_Approved",
+      "webhookId": "fed34e50-e4f7-4459-a730-744c3b752937"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"received\": true, \"rma\": \"{{ $json.body.data.rma_number }}\", \"status\": \"processing\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        208,
+        192
+      ],
+      "id": "e43a9cc0-916a-474a-92a4-752853bd3afe",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const json = item.json;\n  \n  // Parse the return_items back from JSON string\n  let returnItems = [];\n  try {\n    returnItems = JSON.parse(json.return_items || '[]');\n  } catch (e) {\n    returnItems = [];\n  }\n  \n  let action = 'NO_OP';\n  let reason = 'Unknown';\n  let pause_weeks = 0;\n  \n  // Check if this return has items\n  if (!returnItems || returnItems.length === 0) {\n    action = 'NO_OP';\n    reason = 'No items in return';\n  } else {\n    // Check outcomes - if it includes \"refund\", we act. If \"exchange\", we don't.\n    // Note: We need to pass outcomes from the webhook payload\n    // Since we didn't extract it in Node 3, let's work with what we have\n    \n    // For AfterShip: check if all items are being refunded\n    const allRefunded = returnItems.every(i => {\n      const refundQty = parseInt(i.refund_quantity) || 0;\n      const orderedQty = parseInt(i.ordered_quantity) || 1;\n      return refundQty >= orderedQty;\n    });\n    \n    const someRefunded = returnItems.some(i => {\n      const refundQty = parseInt(i.refund_quantity) || 0;\n      return refundQty > 0;\n    });\n    \n    if (!someRefunded) {\n      action = 'NO_OP';\n      reason = 'No items being refunded';\n    } else if (allRefunded) {\n      action = 'CANCEL';\n      reason = 'Full refund - all items returned';\n    } else {\n      action = 'PAUSE';\n      reason = 'Partial refund - some items kept';\n      pause_weeks = 4;\n    }\n  }\n  \n  results.push({\n    json: {\n      ...json,\n      action,\n      reason,\n      pause_weeks,\n      return_items_count: returnItems.length,\n      product_titles: returnItems.map(i => i.product_title).join(', ')\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        192
+      ],
+      "id": "0a31a472-8173-4e93-93e2-2f6cddf60aac",
+      "name": "Classify the Return"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "list",
+          "cachedResultName": "Return-to-Subscription Safeguard",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1640435782,
+          "mode": "list",
+          "cachedResultName": "Dedup_Gate",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=1640435782"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "return_id",
+              "lookupValue": "={{ $json.return_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1104,
+        144
+      ],
+      "id": "dd60ee81-e8be-435e-9578-8dfd7e5dac9e",
+      "name": "Deduplication Check",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2db5a2cf-3b97-4e71-b728-b13301aecad8",
+              "leftValue": "={{ $json.return_id }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1280,
+        144
+      ],
+      "id": "fa8cb30a-2ad9-4414-b433-71349c572a7d",
+      "name": "If Already Processed?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1456,
+        256
+      ],
+      "id": "300c9cc1-4940-41d6-82d6-8c478acb1d75",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1640435782,
+          "mode": "list",
+          "cachedResultName": "Dedup_Gate",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=1640435782"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "processed_at": "={{ new Date().toISOString() }}",
+            "return_id": "={{ $('Classify the Return').item.json.return_id }}",
+            "status": "processing"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "return_id",
+              "displayName": "return_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1456,
+        80
+      ],
+      "id": "e061536e-3852-4e28-b96b-455a673ad4ce",
+      "name": "Write Dedup Record",
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "list",
+          "cachedResultName": "Return-to-Subscription Safeguard",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Audit_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "return_id": "={{ $('Classify the Return').item.json.return_id }}",
+            "email": "={{ $('Classify the Return').item.json.email }}",
+            "rma_number": "={{ $('Classify the Return').item.json.rma_number }}",
+            "order_number": "={{ $('Classify the Return').item.json.order_number }}",
+            "action": "NO_OP",
+            "subscription_id": "N/A",
+            "status": "ONE_TIME_PURCHASE",
+            "reason": "Return does not involve subscription items",
+            "idempotency_key": "={{ $('Classify the Return').item.json.idempotency_key }}",
+            "product_titles": "={{ $('Classify the Return').item.json.product_titles }}",
+            "match_reason": "N/A",
+            "refund amount": "={{ $('Classify the Return').item.json.refund_amount }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "return_id",
+              "displayName": "return_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rma_number",
+              "displayName": "rma_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subscription_id",
+              "displayName": "subscription_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "match_reason",
+              "displayName": "match_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_titles",
+              "displayName": "product_titles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "refund amount",
+              "displayName": "refund amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        928,
+        256
+      ],
+      "id": "23a6e7c8-e5f8-4051-b5f5-7528c4bc934e",
+      "name": "Log One-Time Return",
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.rechargeapps.com/subscriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "customer_email",
+              "value": "={{ $('Classify the Return').item.json.email }}"
+            },
+            {
+              "name": "status",
+              "value": "ACTIVE"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Recharge-Version",
+              "value": "2021-11"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1632,
+        80
+      ],
+      "id": "293c4440-2848-4bda-a48f-1db2f59e461f",
+      "name": "Query Recharge Subscriptions",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "edN8UPryCglPPPsZ",
+          "name": "Recharge_API"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8a4f7602-8334-4dcb-958a-9d4faa74c7b1",
+              "leftValue": "={{ $json.match_found }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2128,
+        64
+      ],
+      "id": "556e25ff-3a32-4072-b1f3-83e477220ce1",
+      "name": "Has Active Subscription?"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "CANCEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b658fad3-2fbf-4c1b-a205-6872437f716c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "72010e4c-f46a-4d4d-bc3d-bfff73866618",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "PAUSE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2480,
+        48
+      ],
+      "id": "0a3051be-6c53-4dff-8ad3-a17d86caea67",
+      "name": "Action Router"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const json = item.json;\n  \n  // Now this will have the actual product ID!\n  const returnedProductId = json.returned_product_id || '';\n  const returnedSku = json.returned_sku || '';\n  \n  const allSubscriptions = json.subscriptions || [];\n  \n  // Match by product ID (Recharge stores it as external_product_id.ecommerce)\n  const matchingSubscription = allSubscriptions.find(sub => {\n    const subProductId = sub.external_product_id?.ecommerce || '';\n    return subProductId.toString() === returnedProductId.toString();\n  });\n  \n  // Fallback: match by SKU\n  const matchingBySku = !matchingSubscription ? allSubscriptions.find(sub => {\n    return sub.sku && sub.sku === returnedSku && returnedSku !== '';\n  }) : null;\n  \n  const finalMatch = matchingSubscription || matchingBySku;\n  \n  results.push({\n    json: {\n      ...json,\n      matching_subscription: finalMatch || null,\n      matching_subscription_id: finalMatch ? finalMatch.id : null,\n      total_subscriptions_found: allSubscriptions.length,\n      returned_product_id: returnedProductId,\n      match_found: finalMatch ? true : false,\n      match_reason: finalMatch \n        ? (matchingSubscription ? 'Matched by product ID' : 'Matched by SKU') \n        : 'No subscription found for returned product ID: ' + returnedProductId\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        64
+      ],
+      "id": "1695966b-45f9-411d-a494-e6bdbbcacc6b",
+      "name": "Filter Matching Subscription"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.rechargeapps.com/subscriptions/' + $json.matching_subscription_id + '/cancel' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Recharge-Version",
+              "value": "2021-11"
+            },
+            {
+              "name": "X-Recharge-Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}_cancel"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"cancellation_reason\": \"Customer returned product - full refund approved via returns app\",\n  \"cancellation_reason_comments\": \"Auto-cancelled by Return-to-Subscription Safeguard. RMA: {{ $json.rma_number }}\",\n  \"send_email\": false\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2672,
+        -32
+      ],
+      "id": "fefebf62-c8fa-4d61-820d-b243db821442",
+      "name": "Cancel Subscription",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "edN8UPryCglPPPsZ",
+          "name": "Recharge_API"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.rechargeapps.com/subscriptions/' + $json.matching_subscription_id + '/set_next_charge_date' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Recharge-Version",
+              "value": "2021-11"
+            },
+            {
+              "name": "X-Recharge-Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}_pause"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"next_charge_date\": \"={{ new Date(Date.now() + (4 * 7 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0] }}\"\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2672,
+        112
+      ],
+      "id": "ded4dcc3-68eb-418c-98ab-c16de85064ed",
+      "name": "Pause Subscription",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "edN8UPryCglPPPsZ",
+          "name": "Recharge_API"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "list",
+          "cachedResultName": "Return-to-Subscription Safeguard",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Audit_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "return_id": "={{ $json.return_id }}",
+            "rma_number": "={{ $json.rma_number }}",
+            "email": "={{ $json.email }}",
+            "order_number": "={{ $json.order_number }}",
+            "action": "={{ $json.action }}",
+            "subscription_id": "={{ $json.matching_subscription_id }}",
+            "status": "SUCCESS",
+            "reason": "={{ $json.reason }}",
+            "match_reason": "={{ $json.match_reason }}",
+            "idempotency_key": "={{ $json.idempotency_key }}",
+            "product_titles": "={{ $json.product_titles }}",
+            "refund amount": "={{ $json.refund_amount }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "return_id",
+              "displayName": "return_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rma_number",
+              "displayName": "rma_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subscription_id",
+              "displayName": "subscription_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "match_reason",
+              "displayName": "match_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_titles",
+              "displayName": "product_titles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "refund amount",
+              "displayName": "refund amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2880,
+        48
+      ],
+      "id": "9f436d6a-1de1-4d4f-8c37-48e5314990da",
+      "name": "Audit Log (SUCCESS)",
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "list",
+          "cachedResultName": "Return-to-Subscription Safeguard",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Audit_Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ new Date().toISOString() }}",
+            "return_id": "={{ $json.return_id }}",
+            "rma_number": "={{ $json.rma_number }}",
+            "email": "={{ $json.email }}",
+            "order_number": "={{ $json.order_number }}",
+            "action": "NO_OP",
+            "subscription_id": "N/A",
+            "status": "NO_MATCHING_SUBSCRIPTION",
+            "reason": "={{ $json.match_reason }}",
+            "match_reason": "={{ $json.returned_product_id }}",
+            "idempotency_key": "={{ $json.idempotency_key }}",
+            "product_titles": "={{ $json.product_titles }}",
+            "refund amount": "={{ $json.refund_amount }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "return_id",
+              "displayName": "return_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rma_number",
+              "displayName": "rma_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "order_number",
+              "displayName": "order_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subscription_id",
+              "displayName": "subscription_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "match_reason",
+              "displayName": "match_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product_titles",
+              "displayName": "product_titles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "refund amount",
+              "displayName": "refund amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2288,
+        112
+      ],
+      "id": "385bf9e4-801e-42dd-afe9-6915a4542eb0",
+      "name": "Log No Matching Sub",
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7d210362-e278-4a0f-a2da-64b9f5a5a0e6",
+              "name": "subscriptions",
+              "value": "={{ $json.subscriptions }}",
+              "type": "array"
+            },
+            {
+              "id": "dc80e19e-3aac-49d5-a1f5-8051f3bb45c5",
+              "name": "returned_product_id",
+              "value": "={{ $('Normalize + Build Payload').item.json.returned_product_id }}",
+              "type": "string"
+            },
+            {
+              "id": "7080a862-f9b5-446f-b340-1c3d6b8f6dba",
+              "name": "return_sku",
+              "value": "={{ $('Normalize + Build Payload').item.json.return_sku }}",
+              "type": "string"
+            },
+            {
+              "id": "e195eba6-d0ec-4995-80d6-6f220a385c3e",
+              "name": "email",
+              "value": "={{ $('Normalize + Build Payload').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "3fab590d-adeb-4e79-aaa8-1b43fe7d8118",
+              "name": "return_id",
+              "value": "={{ $('Normalize + Build Payload').item.json.return_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ea255141-e67a-4b44-9cc1-355fccc9f7f8",
+              "name": "rma_number",
+              "value": "={{ $('Normalize + Build Payload').item.json.rma_number }}",
+              "type": "string"
+            },
+            {
+              "id": "1199d789-13bb-4f1b-aaf9-3dd5a689c5ac",
+              "name": "order_number",
+              "value": "={{ $('Normalize + Build Payload').item.json.order_number }}",
+              "type": "string"
+            },
+            {
+              "id": "d7273819-489a-4705-889e-13cbdf916b29",
+              "name": "action",
+              "value": "={{ $('Classify the Return').item.json.action }}",
+              "type": "string"
+            },
+            {
+              "id": "adadd222-079a-4ddc-a2cb-df7e69e956dc",
+              "name": "reason",
+              "value": "={{ $('Classify the Return').item.json.reason }}",
+              "type": "string"
+            },
+            {
+              "id": "ff43cd07-bed2-4364-b5cd-97f6c9a14dbd",
+              "name": "idempotency_key",
+              "value": "={{ $('Classify the Return').item.json.idempotency_key }}",
+              "type": "string"
+            },
+            {
+              "id": "91c750ff-fc36-424b-b704-a4d8ecb6a223",
+              "name": "product_titles",
+              "value": "={{ $('Classify the Return').item.json.product_titles }}",
+              "type": "string"
+            },
+            {
+              "id": "428e55b4-f790-4bd1-82b0-0b76c603b756",
+              "name": "refund_amount",
+              "value": "={{ $('Classify the Return').item.json.refund_amount }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1808,
+        64
+      ],
+      "id": "97358357-0bac-4b26-9d98-5981428e171c",
+      "name": "Merge Recharge + AfterShip"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg",
+          "mode": "list",
+          "cachedResultName": "Return-to-Subscription Safeguard",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1640435782,
+          "mode": "list",
+          "cachedResultName": "Dedup_Gate",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1UXOJFJ5WiMxxp72yap44ixbJZKcwdRh7tlDrf-PhQBg/edit#gid=1640435782"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "return_id": "={{ $json.return_id }}",
+            "status": "Completed",
+            "processed_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "return_id"
+          ],
+          "schema": [
+            {
+              "id": "return_id",
+              "displayName": "return_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3024,
+        48
+      ],
+      "id": "4a5e0222-5ede-452a-aa78-bc9e6cf02689",
+      "name": "Update Dedup Status",
+      "credentials": {
+        "googleApi": {
+          "id": "hqEpmJILQo64Usql",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "131e834f-8f75-483a-a24a-2a945ce9696b",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "NO_OP",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        752,
+        192
+      ],
+      "id": "4a545300-114d-4cb8-bcb1-9765960c40a7",
+      "name": "Should Process Return?"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={\n  \"username\": \"Return-to-Sub Safeguard\",\n  \"avatar_url\": \"https://cdn-icons-png.flaticon.com/512/564/564619.png\",\n  \"embeds\": [\n    {\n      \"title\": \"🚨 Safeguard Alert - API Action Required\",\n      \"color\": 15158332,\n      \"fields\": [\n        {\n          \"name\": \"RMA Number\",\n          \"value\": \"={{ $('Normalize + Build Payload').first().json.rma_number || 'N/A' }}\",\n          \"inline\": true\n        },\n        {\n          \"name\": \"Customer Email\",\n          \"value\": \"={{ $('Normalize + Build Payload').first().json.email || 'N/A' }}\",\n          \"inline\": true\n        },\n        {\n          \"name\": \"Action Attempted\",\n          \"value\": \"={{ $('Classify the Return').first().json.action || 'N/A' }}\",\n          \"inline\": true\n        },\n        {\n          \"name\": \"HTTP Status Code\",\n          \"value\": \"={{ $json.error ? ($json.error.httpCode || '404') : '404' }}\",\n          \"inline\": true\n        },\n        {\n          \"name\": \"Error Details\",\n          \"value\": \"```\\n{{ $json.error ? $json.error.message : 'API call failed after max retries' }}\\n```\"\n        }\n      ],\n      \"timestamp\": \"={{ new Date().toISOString() }}\",\n      \"footer\": {\n        \"text\": \"Return-to-Subscription Safeguard | Error Handler\"\n      }\n    }\n  ]\n}",
+        "options": {},
+        "embeds": {
+          "values": []
+        }
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        240
+      ],
+      "id": "71ce3ff8-2241-48cd-a084-d5c1fde92e37",
+      "name": "Discord Failure Alert",
+      "webhookId": "8127c62b-68c8-486c-9836-fb2ea37f2bd2",
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "jKnmmojCBwZGAaSq",
+          "name": "Discord Webhook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## LAYER 1: INGRESS & STANDARDIZATION\n- Receives Return Approved webhook.\n- Sends immediate HTTP 200 ACK to source app (prevents sender retries).\n- Cleans and lowercases customer email strings.",
+        "height": 624,
+        "width": 560,
+        "color": "#0B1F3A"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "589bf5bf-1b32-4319-8ba2-a7767f81a3d8",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fbfb20c0-824d-4645-9190-b1007fa43ef6",
+              "name": "=email",
+              "value": "={{ $json.body.data.order.customer.emails[0].toLowerCase().trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "a132bd95-0979-444b-bde9-6307bcc63a2e",
+              "name": "return_id",
+              "value": "={{ $json.body.data.id }}",
+              "type": "string"
+            },
+            {
+              "id": "60b4bba6-d7e3-4b94-8859-4706d346caf8",
+              "name": "rma_number",
+              "value": "={{ $json.body.data.rma_number }}",
+              "type": "string"
+            },
+            {
+              "id": "1c09b0b5-57f3-4937-94de-ac53df86a147",
+              "name": "order_id",
+              "value": "={{ $json.body.data.order.external_id }}",
+              "type": "string"
+            },
+            {
+              "id": "33cdcd2a-c8b1-4ead-aa43-e1270992f64e",
+              "name": "order_number",
+              "value": "={{ $json.body.data.order.order_number }}",
+              "type": "string"
+            },
+            {
+              "id": "617899d3-d525-47fb-9131-5eab94ca4d54",
+              "name": "return_items",
+              "value": "={{ JSON.stringify($json.body.data.return_items) }}",
+              "type": "string"
+            },
+            {
+              "id": "f31e8ced-0c6c-4250-9235-fe50eb703bc0",
+              "name": "refund_amount",
+              "value": "={{ $json.body.data.return_total_including_tax.amount }}",
+              "type": "string"
+            },
+            {
+              "id": "ede48822-817b-44b4-bd37-790c11fab4a8",
+              "name": "idempotency_key",
+              "value": "={{ $json.body.data.rma_number }}_{{ $json.body.data.order.customer.emails[0].toLowerCase().trim() }}_{{ $json.body.data.approved_at.split('T')[0] }}",
+              "type": "string"
+            },
+            {
+              "id": "a839a11c-c517-4ba5-ae36-0447e58bd757",
+              "name": "returned_product_id",
+              "value": "={{ $json.body.data.return_items[0].external_product_id }}",
+              "type": "string"
+            },
+            {
+              "id": "fbbc5cdd-d42d-43ca-a6de-d67784ed0ec3",
+              "name": "return_sku",
+              "value": "={{ $json.body.data.return_items[0].sku }}",
+              "type": "string"
+            },
+            {
+              "id": "cbe5eae3-a143-422c-b388-858f72cafd3f",
+              "name": "store_id",
+              "value": "={{ $json.body.data.order.store.external_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        192
+      ],
+      "id": "059078e1-705c-41cc-bf5d-75711efeea00",
+      "name": "Normalize + Build Payload"
+    },
+    {
+      "parameters": {
+        "content": "## LAYER 2: CLASSIFICATION & EARLY EXIT\n- Determines action: CANCEL (Full return) vs PAUSE (Partial return).\n- Drops exchanges and non-refund items (NO_OP) to 'Log One-Time Return'.\n- Prevents unnecessary Google Sheets & Recharge API queries.",
+        "height": 624,
+        "width": 512,
+        "color": "#2E4A72"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        544,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "d194655f-15df-4fe3-9161-3e16dddee0f8",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## LAYER 3: IDEMPOTENCY & DEDUPLICATION\n- Queries Dedup_Gate sheet for idempotency_key.\n- If record exists -> routes to 'No Operation' (drops duplicate).\n- If new -> appends 'processing' status record to Dedup_Gate.",
+        "height": 624,
+        "width": 528,
+        "color": "#344250"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1072,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "f30a76ed-5993-4759-94df-f0bb88febb97",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## LAYER 4: RECHARGE STATE & MATCHING\n- Fetches active subscriptions for customer email.\n- Merges API response with normalized payload context.\n- Code node filters array matching external_product_id.ecommerce to product ID.",
+        "height": 624,
+        "width": 816,
+        "color": "#3B3B3B"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1616,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "8e9cb442-1263-4b53-b3c0-d59705dcb399",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## LAYER 5: MUTATION & AUDIT TELEMETRY\n- Routes payload to Cancel or Pause Recharge endpoints.\n- Appends success record to Google Sheets Audit Log.\n- Updates Dedup_Gate record from 'processing' to 'Completed'.\n- Error handling routes HTTP failures to Discord alert.",
+        "height": 624,
+        "width": 816,
+        "color": "#656163"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2448,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "21d0624b-8fca-47b6-b5af-4f656f4e1d4d",
+      "name": "Sticky Note4"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Return_Approved": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize + Build Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify the Return": {
+      "main": [
+        [
+          {
+            "node": "Should Process Return?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplication Check": {
+      "main": [
+        [
+          {
+            "node": "If Already Processed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Already Processed?": {
+      "main": [
+        [
+          {
+            "node": "Write Dedup Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Dedup Record": {
+      "main": [
+        [
+          {
+            "node": "Query Recharge Subscriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log One-Time Return": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Recharge Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Merge Recharge + AfterShip",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Active Subscription?": {
+      "main": [
+        [
+          {
+            "node": "Action Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log No Matching Sub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Matching Subscription": {
+      "main": [
+        [
+          {
+            "node": "Has Active Subscription?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Router": {
+      "main": [
+        [
+          {
+            "node": "Cancel Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pause Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause Subscription": {
+      "main": [
+        [
+          {
+            "node": "Audit Log (SUCCESS)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Subscription": {
+      "main": [
+        [
+          {
+            "node": "Audit Log (SUCCESS)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discord Failure Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log (SUCCESS)": {
+      "main": [
+        [
+          {
+            "node": "Update Dedup Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Recharge + AfterShip": {
+      "main": [
+        [
+          {
+            "node": "Filter Matching Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Process Return?": {
+      "main": [
+        [
+          {
+            "node": "Deduplication Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log One-Time Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize + Build Payload": {
+      "main": [
+        [
+          {
+            "node": "Classify the Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "a59b8526-4a0c-4921-95c6-e69c9ec2732b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9cc1b25c4a5a2ee3c8222286cdd7dc0a3af0d82c0c11c8c0629f32118028a6dd"
+  },
+  "nodeGroups": [],
+  "id": "sjdaWNjnHhaYANxd",
+  "tags": []
+}
